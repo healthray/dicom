@@ -67,7 +67,7 @@ const bakedInRoutes = [
     children: Debug,
   },
   {
-    path: '/local',
+    path: '/home',
     children: Local.bind(null, { modePath: '' }), // navigate to the worklist
   },
   {

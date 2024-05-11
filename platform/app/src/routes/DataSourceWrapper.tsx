@@ -28,12 +28,40 @@ const areLocationsTheSame = (location0, location1) => {
  * @param {function} props.children - Layout Template React Component
  */
 function DataSourceWrapper(props) {
-  const navigate = useNavigate();
   const { children: LayoutTemplate, ...rest } = props;
   const params = useParams();
   const location = useLocation();
-  const lowerCaseSearchParams = useSearchParams({ lowerCaseKeys: true });
-  const query = useSearchParams();
+
+  // TODO - get the variable from the props all the time...
+  let dataSourceName = new URLSearchParams(location.search).get('datasources');
+  const dataPath = dataSourceName ? `/${dataSourceName}` : '';
+
+  if (!dataSourceName && window.config.defaultDataSourceName) {
+    dataSourceName = window.config.defaultDataSourceName;
+  } else if (!dataSourceName) {
+    // Gets the first defined datasource with the right name
+    // Mostly for historical reasons - new configs should use the defaultDataSourceName
+    const dataSourceModules =
+      extensionManager.modules[MODULE_TYPES.DATA_SOURCE];
+    // TODO: Good usecase for flatmap?
+    const webApiDataSources = dataSourceModules.reduce((acc, curr) => {
+      const mods = [];
+      curr.module.forEach(mod => {
+        if (mod.type === 'webApi') {
+          mods.push(mod);
+        }
+      });
+      return acc.concat(mods);
+    }, []);
+    dataSourceName = webApiDataSources
+      .map(ds => ds.name)
+      .find(it => extensionManager.getDataSources(it)?.[0] !== undefined);
+  }
+  const dataSource = extensionManager.getDataSources(dataSourceName)?.[0];
+  if (!dataSource) {
+    throw new Error(`No data source found for ${dataSourceName}`);
+  }
+
   // Route props --> studies.mapParams
   // mapParams --> studies.search
   // studies.search --> studies.processResults
@@ -48,108 +76,18 @@ function DataSourceWrapper(props) {
     pageNumber: 1,
     location: 'Not a valid location, causes first load to occur',
   };
-
-  const getInitialDataSourceName = useCallback(() => {
-    // TODO - get the variable from the props all the time...
-    let dataSourceName = lowerCaseSearchParams.get('datasources');
-
-    if (!dataSourceName && window.config.defaultDataSourceName) {
-      return '';
-    }
-
-    if (!dataSourceName) {
-      // Gets the first defined datasource with the right name
-      // Mostly for historical reasons - new configs should use the defaultDataSourceName
-      const dataSourceModules = extensionManager.modules[MODULE_TYPES.DATA_SOURCE];
-      // TODO: Good usecase for flatmap?
-      const webApiDataSources = dataSourceModules.reduce((acc, curr) => {
-        const mods = [];
-        curr.module.forEach(mod => {
-          if (mod.type === 'webApi') {
-            mods.push(mod);
-          }
-        });
-        return acc.concat(mods);
-      }, []);
-      dataSourceName = webApiDataSources
-        .map(ds => ds.name)
-        .find(it => extensionManager.getDataSources(it)?.[0] !== undefined);
-    }
-
-    return dataSourceName;
-  }, []);
-
-  const [isDataSourceInitialized, setIsDataSourceInitialized] = useState(false);
-
-  // The path to the data source to be used in the URL for a mode (e.g. mode/dataSourcePath?StudyIntanceUIDs=1.2.3)
-  const [dataSourcePath, setDataSourcePath] = useState(() => {
-    const dataSourceName = getInitialDataSourceName();
-    return dataSourceName ? `/${dataSourceName}` : '';
-  });
-
-  const [dataSource, setDataSource] = useState(() => {
-    const dataSourceName = getInitialDataSourceName();
-
-    if (!dataSourceName) {
-      return extensionManager.getActiveDataSource()[0];
-    }
-
-    const dataSource = extensionManager.getDataSources(dataSourceName)?.[0];
-    if (!dataSource) {
-      throw new Error(`No data source found for ${dataSourceName}`);
-    }
-
-    return dataSource;
-  });
-
   const [data, setData] = useState(DEFAULT_DATA);
   const [isLoading, setIsLoading] = useState(false);
 
-  /**
-   * The effect to initialize the data source whenever it changes. Similar to
-   * whenever a different Mode is entered, the Mode's data source is initialized, so
-   * too this DataSourceWrapper must initialize its data source whenever a different
-   * data source is activated. Furthermore, a data source might be initialized
-   * several times as it gets activated/deactivated because the location URL
-   * might change and data sources initialize based on the URL.
-   */
   useEffect(() => {
-    const initializeDataSource = async () => {
-      await dataSource.initialize({ params, query });
-      setIsDataSourceInitialized(true);
-    };
-
-    initializeDataSource();
-  }, [dataSource]);
-
-  useEffect(() => {
-    const dataSourceChangedCallback = () => {
-      setIsLoading(false);
-      setIsDataSourceInitialized(false);
-      setDataSourcePath('');
-      setDataSource(extensionManager.getActiveDataSource()[0]);
-      // Setting data to DEFAULT_DATA triggers a new query just like it does for the initial load.
-      setData(DEFAULT_DATA);
-    };
-
-    const sub = extensionManager.subscribe(
-      ExtensionManager.EVENTS.ACTIVE_DATA_SOURCE_CHANGED,
-      dataSourceChangedCallback
+    const queryFilterValues = _getQueryFilterValues(
+      location.search,
+      STUDIES_LIMIT
     );
-    return () => sub.unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!isDataSourceInitialized) {
-      return;
-    }
-
-    const queryFilterValues = _getQueryFilterValues(location.search, STUDIES_LIMIT);
 
     // 204: no content
     async function getData() {
       setIsLoading(true);
-      log.time(Enums.TimingEnum.SEARCH_TO_LIST);
       const studies = await dataSource.query.studies.search(queryFilterValues);
 
       setData({
@@ -159,8 +97,6 @@ function DataSourceWrapper(props) {
         pageNumber: queryFilterValues.pageNumber,
         location,
       });
-      log.timeEnd(Enums.TimingEnum.SCRIPT_TO_VIEW);
-      log.timeEnd(Enums.TimingEnum.SEARCH_TO_LIST);
 
       setIsLoading(false);
     }
@@ -171,46 +107,68 @@ function DataSourceWrapper(props) {
       // - And we didn't cross a result offset range
       const isSamePage = data.pageNumber === queryFilterValues.pageNumber;
       const previousOffset =
-        Math.floor((data.pageNumber * data.resultsPerPage) / STUDIES_LIMIT) * (STUDIES_LIMIT - 1);
+        Math.floor((data.pageNumber * data.resultsPerPage) / STUDIES_LIMIT) *
+        (STUDIES_LIMIT - 1);
       const newOffset =
         Math.floor(
-          (queryFilterValues.pageNumber * queryFilterValues.resultsPerPage) / STUDIES_LIMIT
+          (queryFilterValues.pageNumber * queryFilterValues.resultsPerPage) /
+          STUDIES_LIMIT
         ) *
         (STUDIES_LIMIT - 1);
-      // Simply checking data.location !== location is not sufficient because even though the location href (i.e. entire URL)
-      // has not changed, the React Router still provides a new location reference and would result in two study queries
-      // on initial load. Alternatively, window.location.href could be used.
-      const isLocationUpdated =
-        typeof data.location === 'string' || !areLocationsTheSame(data.location, location);
+      const isLocationUpdated = data.location !== location;
       const isDataInvalid =
-        !isSamePage || (!isLoading && (newOffset !== previousOffset || isLocationUpdated));
+        !isSamePage ||
+        (!isLoading && (newOffset !== previousOffset || isLocationUpdated));
 
-      if (isDataInvalid) {
-        getData().catch(e => {
-          console.error(e);
-          // If there is a data source configuration API, then the Worklist will popup the dialog to attempt to configure it
-          // and attempt to resolve this issue.
-          if (dataSource.getConfig().configurationAPI) {
-            return;
-          }
-
-          // No data source configuration API, so navigate to the not found server page.
-          navigate('/notfoundserver', '_self');
-        });
+      if (isDataInvalid && dataSourceName != "dicomweb") {
+        getData();
       }
     } catch (ex) {
       console.warn(ex);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, location, params, isLoading, setIsLoading, dataSource, isDataSourceInitialized]);
+  }, [data, location, params, isLoading, setIsLoading]);
   // queryFilterValues
+
+  if (dataSourceName == "dicomweb" || !data.studies.length) {
+    return (
+      <div style={{ width: '100%', height: '100%' }}>
+        <div className="h-screen w-screen flex justify-center items-center ">
+          <div className="px-8 mx-auto bg-secondary-dark drop-shadow-md space-y-2 rounded-lg">
+            <img
+              className="block mx-auto h-40"
+              src="./healthray-logo.png"
+              alt="healthrayLogo"
+            />
+            <div className="text-center">
+              <div className="flex flex-col justify-center items-center">
+                <p className="text-xl text-white font-semibold">
+                  Please visit <a className='text-primary-active' href="https://www.lab.healthray.com/" target='_blank'>lab.healthray.com</a> Site.
+                </p>
+              </div>
+            </div>
+            <div className='flex justify-end items-center'>
+              <span className='text-white'>
+                Powered By
+              </span>
+              <img
+                className="w-20 h-14 ml-2"
+                src="./ohif-logo.svg"
+                alt="OHIF"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // TODO: Better way to pass DataSource?
   return (
     <LayoutTemplate
       {...rest}
       data={data.studies}
-      dataPath={dataSourcePath}
+      dataPath={dataPath}
       dataTotal={data.total}
       dataSource={dataSource}
       isLoadingData={isLoading}
