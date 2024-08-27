@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import JSZip from 'jszip';
 import { DicomMetadataStore } from '@ohif/core';
 import filesToStudies from './filesToStudies';
@@ -14,6 +14,7 @@ function Local({ modePath }: LocalProps) {
   const location = useLocation();
   const [loadingFile, setLoadingFile] = useState(true)
   const [isError, setIsError] = useState(false)
+  const [searchParams] = useSearchParams();
 
   const microscopyExtensionLoaded = extensionManager.registeredExtensionIds.includes(
     '@ohif/extension-dicom-microscopy'
@@ -43,33 +44,39 @@ function Local({ modePath }: LocalProps) {
 
   const onLoad = async () => {
     try {
-      console.log("location.search", location.search)
-      const blob = await getBlobByURL(location.search.replace('?url=', ''));
+      const fileType = searchParams.get('fileType') || 'zip';
 
-      const zip = new JSZip();
-      let unzipData = await zip.loadAsync(blob);
-      unzipData = await unZip(unzipData);
-      const files = await Promise.all(
-        Object.entries(unzipData.files)
-          .filter(([_, val]) => !val.dir)
-          .map(
-            ([fileName]) =>
-              new Promise(async resolve => {
-                const fileData = await unzipData.files[fileName].async(
-                  'arraybuffer'
-                );
-                const file = new File([fileData], fileName, {
-                  type: 'application/dicom',
-                });
-                resolve(file);
-              })
-          )
-      );
+      const blob = await getBlobByURL(searchParams.get('url'));
+      let studies = null;
 
-      const studies = await filesToStudies(files);
+      if (fileType == 'zip') {
+        const zip = new JSZip();
+        let unzipData = await zip.loadAsync(blob);
+        unzipData = await unZip(unzipData);
+        const files = await Promise.all(
+          Object.entries(unzipData.files)
+            .filter(([_, val]) => !val.dir)
+            .map(
+              ([fileName]) =>
+                new Promise(async resolve => {
+                  const fileData = await unzipData.files[fileName].async(
+                    'arraybuffer'
+                  );
+                  const file = new File([fileData], fileName, {
+                    type: 'application/dicom',
+                  });
+                  resolve(file);
+                })
+            )
+        );
+        studies = await filesToStudies(files);
+      } else if (fileType == 'dcm') {
+        studies = await filesToStudies([blob]);
+      } else {
+        navigate("/");
+      }
 
       const query = new URLSearchParams();
-
 
       if (microscopyExtensionLoaded) {
         // TODO: for microscopy, we are forcing microscopy mode, which is not ideal.
