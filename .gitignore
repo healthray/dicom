@@ -25,7 +25,7 @@ yarn-error.log
 .env
 *.code-workspace
 .directory
-
+docker-compose.yml
 # Common Example Data Directories
 sampledata/
 example/deps/
