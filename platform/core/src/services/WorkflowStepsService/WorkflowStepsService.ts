@@ -1,6 +1,5 @@
 import { CommandsManager } from '../../classes';
 import { ExtensionManager } from '../../extensions';
-import { ServicesManager } from '../../services';
 import { PubSubService } from '../_shared/pubSubServiceInterface';
 
 export const EVENTS = {
@@ -78,11 +77,12 @@ export type WorkflowStep = {
     };
   };
   onEnter: () => void | CommandCallback[];
+  onExit: () => void | CommandCallback[];
 };
 
 class WorkflowStepsService extends PubSubService {
   private _extensionManager: ExtensionManager;
-  private _servicesManager: ServicesManager;
+  private _servicesManager: AppTypes.ServicesManager;
   private _commandsManager: CommandsManager;
   private _workflowSteps: WorkflowStep[];
   private _activeWorkflowStep: WorkflowStep;
@@ -90,7 +90,7 @@ class WorkflowStepsService extends PubSubService {
   constructor(
     extensionManager: ExtensionManager,
     commandsManager: CommandsManager,
-    servicesManager: ServicesManager
+    servicesManager: AppTypes.ServicesManager
   ) {
     super(EVENTS);
     this._workflowSteps = [];
@@ -136,7 +136,8 @@ class WorkflowStepsService extends PubSubService {
     const toUse = Array.isArray(toolbarButtons) ? toolbarButtons : [toolbarButtons];
 
     toUse.forEach(({ buttonSection, buttons }) => {
-      toolbarService.createButtonSection(buttonSection, buttons);
+      toolbarService.clearButtonSection(buttonSection);
+      toolbarService.updateSection(buttonSection, buttons);
     });
   }
 
@@ -172,7 +173,7 @@ class WorkflowStepsService extends PubSubService {
 
     const commandsManager = this._commandsManager;
 
-    if (!Array.isArray) {
+    if (!Array.isArray(callbacks)) {
       callbacks = [callbacks];
     }
 
@@ -201,6 +202,10 @@ class WorkflowStepsService extends PubSubService {
 
     if (!newWorkflowStep) {
       throw new Error(`Invalid workflowStepId (${workflowStepId})`);
+    }
+
+    if (this._activeWorkflowStep) {
+      this._invokeCallbacks(previousWorkflowStep.onExit);
     }
 
     // onEnter needs to be called before updating the Hanging Protocol because

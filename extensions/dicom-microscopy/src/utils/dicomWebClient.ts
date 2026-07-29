@@ -9,9 +9,9 @@ import { StaticWadoClient } from '@ohif/extension-default';
  * @param param0
  * @returns
  */
-export default function getDicomWebClient({ extensionManager, servicesManager }) {
+export default function getDicomWebClient({ extensionManager, servicesManager }: withAppTypes) {
   const dataSourceConfig = window.config.dataSources.find(
-    ds => ds.sourceName === extensionManager.activeDataSource
+    ds => ds.sourceName === extensionManager.activeDataSourceName
   );
   const { userAuthenticationService } = servicesManager.services;
 
@@ -28,7 +28,7 @@ export default function getDicomWebClient({ extensionManager, servicesManager })
   const client = new StaticWadoClient(wadoConfig);
   client.wadoURL = wadoConfig.url;
 
-  if (extensionManager.activeDataSource === 'dicomlocal') {
+  if (extensionManager.activeDataSourceName === 'dicomlocal') {
     /**
      * For local data source, override the retrieveInstanceFrames() method of the
      * dicomweb-client to retrieve image data from memory cached metadata.

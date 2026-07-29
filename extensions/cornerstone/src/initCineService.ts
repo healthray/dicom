@@ -1,12 +1,14 @@
-import { cache } from '@cornerstonejs/core';
+import { cache, Types } from '@cornerstonejs/core';
 import { utilities } from '@cornerstonejs/tools';
 
-function _getVolumesFromViewport(viewport) {
-  return viewport ? viewport.getActors().map(actor => cache.getVolume(actor.uid)) : [];
-}
+function _getVolumeFromViewport(viewport: Types.IBaseVolumeViewport) {
+  // Handle non-volume viewports that don't have getAllVolumeIds
+  if (!viewport?.getAllVolumeIds) {
+    return null;
+  }
 
-function _getVolumeFromViewport(viewport) {
-  const volumes = _getVolumesFromViewport(viewport);
+  const volumeIds = viewport.getAllVolumeIds();
+  const volumes = volumeIds.map(id => cache.getVolume(id));
   const dynamicVolume = volumes.find(volume => volume.isDynamicVolume());
 
   return dynamicVolume ?? volumes[0];
@@ -19,7 +21,7 @@ function _getVolumeFromViewport(viewport) {
  * @param srcViewportIndex Source viewport index
  * @returns array with viewport information.
  */
-function _getSyncedViewports(servicesManager, srcViewportId) {
+function _getSyncedViewports(servicesManager: AppTypes.ServicesManager, srcViewportId) {
   const { viewportGridService, cornerstoneViewportService } = servicesManager.services;
 
   const { viewports: viewportsStates } = viewportGridService.getState();
@@ -43,12 +45,12 @@ function _getSyncedViewports(servicesManager, srcViewportId) {
     .filter(({ viewportId }) => {
       const viewport = cornerstoneViewportService.getCornerstoneViewport(viewportId);
 
-      return viewportId !== srcViewportId && viewport?.hasVolumeId(srcVolumeId);
+      return viewportId !== srcViewportId && viewport?.hasVolumeId?.(srcVolumeId);
     })
     .map(({ viewportId }) => ({ viewportId }));
 }
 
-function initCineService(servicesManager) {
+function initCineService(servicesManager: AppTypes.ServicesManager) {
   const { cineService } = servicesManager.services;
 
   const getSyncedViewports = viewportId => {

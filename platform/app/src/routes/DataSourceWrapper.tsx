@@ -1,23 +1,13 @@
 /* eslint-disable react/jsx-props-no-spreading */
 import React, { useCallback, useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
-import { Enums, ExtensionManager, MODULE_TYPES, log } from '@ohif/core';
+import { ExtensionManager, MODULE_TYPES } from '@ohif/core';
 //
-import { extensionManager } from '../App.tsx';
-import { useParams, useLocation } from 'react-router';
-import { useNavigate } from 'react-router-dom';
-import useSearchParams from '../hooks/useSearchParams.ts';
-
-/**
- * Determines if two React Router location objects are the same.
- */
-const areLocationsTheSame = (location0, location1) => {
-  return (
-    location0.pathname === location1.pathname &&
-    location0.search === location1.search &&
-    location0.hash === location1.hash
-  );
-};
+import { extensionManager } from '../App';
+import { useParams } from 'react-router';
+import useSearchParams from '../hooks/useSearchParams';
+import { useAppConfig } from '@state';
+import { useStudyListQuery } from '../hooks';
 
 /**
  * Uses route properties to determine the data source that should be passed
@@ -27,40 +17,13 @@ const areLocationsTheSame = (location0, location1) => {
  * @param {object} props
  * @param {function} props.children - Layout Template React Component
  */
-function DataSourceWrapper(props) {
+function DataSourceWrapper(props: withAppTypes) {
+  const { servicesManager } = props;
   const { children: LayoutTemplate, ...rest } = props;
   const params = useParams();
-  const location = useLocation();
-
-  // TODO - get the variable from the props all the time...
-  let dataSourceName = new URLSearchParams(location.search).get('datasources');
-  const dataPath = dataSourceName ? `/${dataSourceName}` : '';
-
-  if (!dataSourceName && window.config.defaultDataSourceName) {
-    dataSourceName = window.config.defaultDataSourceName;
-  } else if (!dataSourceName) {
-    // Gets the first defined datasource with the right name
-    // Mostly for historical reasons - new configs should use the defaultDataSourceName
-    const dataSourceModules =
-      extensionManager.modules[MODULE_TYPES.DATA_SOURCE];
-    // TODO: Good usecase for flatmap?
-    const webApiDataSources = dataSourceModules.reduce((acc, curr) => {
-      const mods = [];
-      curr.module.forEach(mod => {
-        if (mod.type === 'webApi') {
-          mods.push(mod);
-        }
-      });
-      return acc.concat(mods);
-    }, []);
-    dataSourceName = webApiDataSources
-      .map(ds => ds.name)
-      .find(it => extensionManager.getDataSources(it)?.[0] !== undefined);
-  }
-  const dataSource = extensionManager.getDataSources(dataSourceName)?.[0];
-  if (!dataSource) {
-    throw new Error(`No data source found for ${dataSourceName}`);
-  }
+  const lowerCaseSearchParams = useSearchParams({ lowerCaseKeys: true });
+  const query = useSearchParams();
+  const [appConfig] = useAppConfig();
 
   // Route props --> studies.mapParams
   // mapParams --> studies.search
@@ -68,112 +31,111 @@ function DataSourceWrapper(props) {
   // studies.processResults --> <LayoutTemplate studies={} />
   // But only for LayoutTemplate type of 'list'?
   // Or no data fetching here, and just hand down my source
-  const STUDIES_LIMIT = 101;
-  const DEFAULT_DATA = {
-    studies: [],
-    total: 0,
-    resultsPerPage: 25,
-    pageNumber: 1,
-    location: 'Not a valid location, causes first load to occur',
-  };
-  const [data, setData] = useState(DEFAULT_DATA);
-  const [isLoading, setIsLoading] = useState(false);
+
+  const getInitialDataSourceName = useCallback(() => {
+    // TODO - get the variable from the props all the time...
+    let dataSourceName = lowerCaseSearchParams.get('datasources');
+
+    if (!dataSourceName && appConfig.defaultDataSourceName) {
+      return '';
+    }
+
+    if (!dataSourceName) {
+      // Gets the first defined datasource with the right name
+      // Mostly for historical reasons - new configs should use the defaultDataSourceName
+      const dataSourceModules = extensionManager.modules[MODULE_TYPES.DATA_SOURCE];
+      // TODO: Good usecase for flatmap?
+      const webApiDataSources = dataSourceModules.reduce((acc, curr) => {
+        const mods = [];
+        curr.module.forEach(mod => {
+          if (mod.type === 'webApi') {
+            mods.push(mod);
+          }
+        });
+        return acc.concat(mods);
+      }, []);
+      dataSourceName = webApiDataSources
+        .map(ds => ds.name)
+        .find(it => extensionManager.getDataSources(it)?.[0] !== undefined);
+    }
+
+    return dataSourceName;
+  }, []);
+
+  const [isDataSourceInitialized, setIsDataSourceInitialized] = useState(false);
+
+  // The path to the data source to be used in the URL for a mode (e.g. mode/dataSourcePath?StudyIntanceUIDs=1.2.3)
+  const [dataSourcePath, setDataSourcePath] = useState(() => {
+    const dataSourceName = getInitialDataSourceName();
+    return dataSourceName ? `/${dataSourceName}` : '';
+  });
+
+  const [dataSource, setDataSource] = useState(() => {
+    const dataSourceName = getInitialDataSourceName();
+
+    if (!dataSourceName) {
+      return extensionManager.getActiveDataSource()[0];
+    }
+
+    const dataSource = extensionManager.getDataSources(dataSourceName)?.[0];
+    if (!dataSource) {
+      throw new Error(`No data source found for ${dataSourceName}`);
+    }
+
+    return dataSource;
+  });
+
+  const { studies, isLoading, hasFetchedOnce, refresh } = useStudyListQuery({
+    dataSource,
+    isDataSourceInitialized,
+    servicesManager,
+  });
+
+  /**
+   * The effect to initialize the data source whenever it changes. Similar to
+   * whenever a different Mode is entered, the Mode's data source is initialized, so
+   * too this DataSourceWrapper must initialize its data source whenever a different
+   * data source is activated. Furthermore, a data source might be initialized
+   * several times as it gets activated/deactivated because the location URL
+   * might change and data sources initialize based on the URL.
+   */
+  useEffect(() => {
+    const initializeDataSource = async () => {
+      await dataSource.initialize({ params, query });
+      setIsDataSourceInitialized(true);
+    };
+
+    initializeDataSource();
+  }, [dataSource]);
 
   useEffect(() => {
-    const queryFilterValues = _getQueryFilterValues(
-      location.search,
-      STUDIES_LIMIT
+    const dataSourceChangedCallback = () => {
+      setIsDataSourceInitialized(false);
+      setDataSourcePath('');
+      setDataSource(extensionManager.getActiveDataSource()[0]);
+      // Resets the cached data, the loading flag, and the first-fetch gate,
+      // then triggers a new query just like the initial load.
+      refresh();
+    };
+
+    const sub = extensionManager.subscribe(
+      ExtensionManager.EVENTS.ACTIVE_DATA_SOURCE_CHANGED,
+      dataSourceChangedCallback
     );
-
-    // 204: no content
-    async function getData() {
-      setIsLoading(true);
-      const studies = await dataSource.query.studies.search(queryFilterValues);
-
-      setData({
-        studies: studies || [],
-        total: studies.length,
-        resultsPerPage: queryFilterValues.resultsPerPage,
-        pageNumber: queryFilterValues.pageNumber,
-        location,
-      });
-
-      setIsLoading(false);
-    }
-
-    try {
-      // Cache invalidation :thinking:
-      // - Anytime change is not just next/previous page
-      // - And we didn't cross a result offset range
-      const isSamePage = data.pageNumber === queryFilterValues.pageNumber;
-      const previousOffset =
-        Math.floor((data.pageNumber * data.resultsPerPage) / STUDIES_LIMIT) *
-        (STUDIES_LIMIT - 1);
-      const newOffset =
-        Math.floor(
-          (queryFilterValues.pageNumber * queryFilterValues.resultsPerPage) /
-          STUDIES_LIMIT
-        ) *
-        (STUDIES_LIMIT - 1);
-      const isLocationUpdated = data.location !== location;
-      const isDataInvalid =
-        !isSamePage ||
-        (!isLoading && (newOffset !== previousOffset || isLocationUpdated));
-
-      if (isDataInvalid && dataSourceName != "dicomweb") {
-        getData();
-      }
-    } catch (ex) {
-      console.warn(ex);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, location, params, isLoading, setIsLoading]);
-  // queryFilterValues
-
-  if (dataSourceName == "dicomweb" || !data.studies.length) {
-    return (
-      <div style={{ width: '100%', height: '100%' }}>
-        <div className="h-screen w-screen flex justify-center items-center ">
-          <div className="px-8 mx-auto bg-secondary-dark drop-shadow-md space-y-2 rounded-lg">
-            <img
-              className="block mx-auto h-40"
-              src="./healthray-logo.png"
-              alt="healthrayLogo"
-            />
-            <div className="text-center">
-              <div className="flex flex-col justify-center items-center">
-                <p className="text-xl text-white font-semibold">
-                  Please visit <a className='text-primary-active' href="https://www.lab.healthray.com/" target='_blank'>lab.healthray.com</a> Site.
-                </p>
-              </div>
-            </div>
-            <div className='flex justify-end items-center'>
-              <span className='text-white'>
-                Powered By
-              </span>
-              <img
-                className="w-20 h-14 ml-2"
-                src="./ohif-logo.svg"
-                alt="OHIF"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
+    return () => sub.unsubscribe();
+  }, []);
 
   // TODO: Better way to pass DataSource?
   return (
     <LayoutTemplate
       {...rest}
-      data={data.studies}
-      dataPath={dataPath}
-      dataTotal={data.total}
+      data={studies}
+      dataTotal={studies.length}
+      dataPath={dataSourcePath}
       dataSource={dataSource}
       isLoadingData={isLoading}
-      // To refresh the data, simply reset it to DEFAULT_DATA which invalidates it and triggers a new query to fetch the data.
-      onRefresh={() => setData(DEFAULT_DATA)}
+      hasFetchedOnce={hasFetchedOnce}
+      onRefresh={refresh}
     />
   );
 }
@@ -184,59 +146,3 @@ DataSourceWrapper.propTypes = {
 };
 
 export default DataSourceWrapper;
-
-/**
- * Duplicated in `workList`
- * Need generic that can be shared? Isn't this what qs is for?
- * @param {*} query
- */
-function _getQueryFilterValues(query, queryLimit) {
-  query = new URLSearchParams(query);
-
-  const pageNumber = _tryParseInt(query.get('pageNumber'), 1);
-  const resultsPerPage = _tryParseInt(query.get('resultsPerPage'), 25);
-
-  const queryFilterValues = {
-    // DCM
-    patientId: query.get('mrn'),
-    patientName: query.get('patientName'),
-    studyDescription: query.get('description'),
-    modalitiesInStudy: query.get('modalities') && query.get('modalities').split(','),
-    accessionNumber: query.get('accession'),
-    //
-    startDate: query.get('startDate'),
-    endDate: query.get('endDate'),
-    page: _tryParseInt(query.get('page'), undefined),
-    pageNumber,
-    resultsPerPage,
-    // Rarely supported server-side
-    sortBy: query.get('sortBy'),
-    sortDirection: query.get('sortDirection'),
-    // Offset...
-    offset: Math.floor((pageNumber * resultsPerPage) / queryLimit) * (queryLimit - 1),
-    config: query.get('configUrl'),
-  };
-
-  // patientName: good
-  // studyDescription: good
-  // accessionNumber: good
-
-  // Delete null/undefined keys
-  Object.keys(queryFilterValues).forEach(
-    key => queryFilterValues[key] == null && delete queryFilterValues[key]
-  );
-
-  return queryFilterValues;
-
-  function _tryParseInt(str, defaultValue) {
-    let retValue = defaultValue;
-    if (str !== null) {
-      if (str.length > 0) {
-        if (!isNaN(str)) {
-          retValue = parseInt(str);
-        }
-      }
-    }
-    return retValue;
-  }
-}
