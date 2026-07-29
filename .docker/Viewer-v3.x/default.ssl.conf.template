@@ -1,13 +1,40 @@
+# See default.conf.template for why the access log drops the query string and
+# why Referrer-Policy matters more than usual for this app.
+log_format phi_safe_ssl '$remote_addr - $remote_user [$time_local] '
+                        '"$request_method $uri $server_protocol" '
+                        '$status $body_bytes_sent "$http_user_agent"';
+
 server {
   listen ${SSL_PORT} ssl http2 default_server;
   listen [::]:${SSL_PORT} ssl http2 default_server;
   ssl_certificate /etc/ssl/certs/ssl-certificate.crt;
   ssl_certificate_key /etc/ssl/private/ssl-private-key.key;
+
+  # TLS 1.2+ only. Left explicit rather than relying on the nginx default, which
+  # varies by version and has historically included TLS 1.0/1.1.
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_prefer_server_ciphers off;
+  ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+  ssl_session_timeout 1d;
+  ssl_session_cache shared:SSL:10m;
+  ssl_session_tickets off;
+
+  access_log /var/log/nginx/access.log phi_safe_ssl;
+
+  # Security headers — see default.conf.template. nginx's add_header inheritance
+  # is all-or-nothing per location, so keep the full set together.
+  add_header Referrer-Policy "no-referrer" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header X-Frame-Options "DENY" always;
+  add_header Cross-Origin-Resource-Policy "same-origin" always;
+  add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+  add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' blob: data: ${CSP_CONNECT_SRC}; worker-src 'self' blob:; child-src 'self' blob:; object-src 'self' blob:; frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+
   location / {
     root   /usr/share/nginx/html;
     index  index.html index.htm;
     try_files $uri $uri/ /index.html;
-    add_header Cross-Origin-Resource-Policy same-origin;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

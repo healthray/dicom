@@ -35,7 +35,7 @@ function ViewerViewportGrid(props: withAppTypes) {
     const availableDisplaySets = displaySetService.getActiveDisplaySets();
 
     if (!availableDisplaySets.length) {
-      console.log('No available display sets', availableDisplaySets);
+      console.warn('No available display sets');
       return;
     }
 
@@ -337,7 +337,15 @@ function _getViewportComponent(displaySets, viewportComponents, uiNotificationSe
     }
   }
 
-  console.log("Can't show displaySet", SOPClassHandlerId, displaySets[0]);
+  // Log identifiers only. A display set carries the naturalized DICOM
+  // attributes, including PatientName and PatientID, so logging the object
+  // itself would write PHI into the browser console.
+  console.warn(
+    "Can't show displaySet",
+    SOPClassHandlerId,
+    `SOPClassUID=${displaySets[0]?.SOPClassUID}`,
+    `Modality=${displaySets[0]?.Modality}`
+  );
   uiNotificationService.show({
     title: 'Viewport Not Supported Yet',
     message: `Cannot display SOPClassUID of ${displaySets[0].SOPClassUID} yet`,

@@ -5,8 +5,9 @@ import { InvestigationalUseDialog } from '@ohif/ui-next';
 import { HangingProtocolService, CommandsManager } from '@ohif/core';
 import { useAppConfig } from '@state';
 import ViewerHeader from './ViewerHeader';
+import ClinicalUseNotice from './ClinicalUseNotice';
 import SidePanelWithServices from '../Components/SidePanelWithServices';
-import { Onboarding, ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@ohif/ui-next';
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@ohif/ui-next';
 import useResizablePanels from './ResizablePanelsHook';
 
 const resizableHandleClassName = 'mt-[1px] bg-background';
@@ -158,11 +159,13 @@ function ViewerLayout({
         appConfig={appConfig}
       />
       <div
-        className="relative flex w-full flex-row flex-nowrap items-stretch overflow-hidden bg-background"
+        className="bg-background relative flex w-full flex-row flex-nowrap items-stretch overflow-hidden"
         style={{ height: 'calc(100vh - 52px)' }}
       >
         <React.Fragment>
-          {showLoadingIndicator && <LoadingIndicatorProgress className="h-full w-full bg-background" />}
+          {showLoadingIndicator && (
+            <LoadingIndicatorProgress className="bg-background h-full w-full" />
+          )}
           <ResizablePanelGroup {...resizablePanelGroupProps}>
             {/* LEFT SIDEPANELS */}
             {hasLeftPanels ? (
@@ -186,7 +189,7 @@ function ViewerLayout({
             <ResizablePanel {...resizableViewportGridPanelProps}>
               <div className="flex h-full flex-1 flex-col">
                 <div
-                  className="relative flex h-full flex-1 items-center justify-center overflow-hidden bg-background"
+                  className="bg-background relative flex h-full flex-1 items-center justify-center overflow-hidden"
                   onMouseEnter={handleMouseEnter}
                 >
                   <ViewportGridComp
@@ -217,8 +220,8 @@ function ViewerLayout({
           </ResizablePanelGroup>
         </React.Fragment>
       </div>
-      <Onboarding tours={customizationService.getCustomization('ohif.tours')} />
       <InvestigationalUseDialog dialogConfiguration={appConfig?.investigationalUseDialog} />
+      <ClinicalUseNotice text={appConfig?.clinicalUseNotice} />
     </div>
   );
 }

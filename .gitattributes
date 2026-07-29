@@ -3,3 +3,6 @@
 * text=auto
 # Declares that files will always have CRLF line ends
 *.sh text eol=lf
+# nginx config templates are consumed by envsubst inside the Linux image. A
+# Windows checkout would otherwise hand them to the container with CRLF endings.
+*.template text eol=lf

@@ -176,8 +176,23 @@ module.exports = (env, argv) => {
           PUBLIC_URL: PUBLIC_URL,
         },
       }),
-      // Generate a service worker for fast local loads.
-      ...(IS_COVERAGE
+      // Service worker generation, OFF by default (set GENERATE_SERVICE_WORKER=true
+      // to re-enable).
+      //
+      // It is currently dead weight AND a liability:
+      //   - Nothing registers it. `public/init-service-worker.js` guards its
+      //     registration behind `typeof importScripts === 'function'`, which is
+      //     false in a document context, so that branch never runs. The file's
+      //     only live effect is unregistering stale workers.
+      //   - `src/service-worker.js` would `importScripts` from
+      //     storage.googleapis.com and cache Google Fonts — an external runtime
+      //     dependency and a cross-border transfer to review under GDPR. The
+      //     deployed CSP now blocks both.
+      //   - A cache layer in front of imaging responses is a PHI-at-rest
+      //     question we do not want answered by accident.
+      // Emitting an unregisterable sw.js only creates the risk that something
+      // registers it later.
+      ...(IS_COVERAGE || process.env.GENERATE_SERVICE_WORKER !== 'true'
         ? []
         : [
             new InjectServiceWorkerManifestPlugin({

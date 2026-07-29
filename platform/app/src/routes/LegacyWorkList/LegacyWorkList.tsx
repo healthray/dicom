@@ -30,7 +30,6 @@ import {
   Clipboard,
   useModal,
   useSessionStorage,
-  Onboarding,
   ScrollArea,
   InvestigationalUseDialog,
   formatDICOMDate,
@@ -560,7 +559,6 @@ function LegacyWorkList({
         WhiteLabeling={appConfig.whiteLabeling}
         showPatientInfo={PatientInfoVisibility.DISABLED}
       />
-      <Onboarding />
       <InvestigationalUseDialog dialogConfiguration={appConfig?.investigationalUseDialog} />
       <div className="flex h-full flex-col overflow-y-auto">
         <ScrollArea>

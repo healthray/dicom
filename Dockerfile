@@ -50,13 +50,32 @@ COPY --link --exclude=pnpm-lock.yaml --exclude=package.json --exclude=Dockerfile
 
 # Build here
 # After install it should hopefully be stable until the local directory changes
-ENV QUICK_BUILD true
-# ENV GENERATE_SOURCEMAP=false
+#
+# QUICK_BUILD skips minification (and source maps). It is a fast-iteration
+# switch, not a production one: with it on, the image ships an unminified,
+# readable bundle. Left off here so the published image is minified. Override
+# with --build-arg QUICK_BUILD=true for a throwaway local image.
+ARG QUICK_BUILD=false
+ENV QUICK_BUILD=${QUICK_BUILD}
+# With QUICK_BUILD off, the production devtool ('source-map') applies again, so
+# opt out explicitly rather than serving application source from the web root.
+ARG GENERATE_SOURCEMAP=false
+ENV GENERATE_SOURCEMAP=${GENERATE_SOURCEMAP}
+# The ENV is what actually reaches webpack. Without it `--build-arg APP_CONFIG`
+# is silently ignored and the build falls back to webpack's own default
+# (config/default.js for a production build) -- which matched the ARG default,
+# so the setting looked like it worked while doing nothing.
 ARG APP_CONFIG=config/default.js
+ENV APP_CONFIG=${APP_CONFIG}
 ARG PUBLIC_URL=/
 ENV PUBLIC_URL=${PUBLIC_URL}
 
 RUN pnpm run show:config
+# NOTE: the version/commit stamped into the bundle comes from the committed
+# version.txt and commit.txt. `version.mjs` cannot regenerate them here because
+# .dockerignore excludes .git, so a stale commit.txt silently ships an image
+# that misreports which build it is. Run `pnpm run version:custom` on the host
+# BEFORE `docker build`.
 RUN pnpm run build
 
 # Precompress files
@@ -74,16 +93,20 @@ ENV PORT=${PORT}
 RUN rm /etc/nginx/conf.d/default.conf
 USER nginx
 COPY --chown=nginx:nginx .docker/Viewer-v3.x /usr/src
-RUN chmod 777 /usr/src/entrypoint.sh
+RUN chmod 755 /usr/src/entrypoint.sh
 COPY --from=builder /usr/src/app/platform/app/dist /usr/share/nginx/html${PUBLIC_URL}
 # Copy paths that are renamed/redirected generally
 # Microscopy libraries depend on root level include, so must be copied
 COPY --from=builder /usr/src/app/platform/app/dist/dicom-microscopy-viewer /usr/share/nginx/html/dicom-microscopy-viewer
 
-# In entrypoint.sh, app-config.js might be overwritten, so chmod it to be writeable.
-# The nginx user cannot chmod it, so change to root.
+# entrypoint.sh rewrites app-config.js, so the web root must be writeable by the
+# nginx user. Ownership is what grants that -- 777 additionally made every
+# served file world-writable, which would let any other process in the container
+# rewrite the application. 755/644 keeps owner write and drops the rest.
 USER root
-RUN chown -R nginx:nginx /usr/share/nginx/html && chmod -R 777 /usr/share/nginx/html
+RUN chown -R nginx:nginx /usr/share/nginx/html \
+    && find /usr/share/nginx/html -type d -exec chmod 755 {} + \
+    && find /usr/share/nginx/html -type f -exec chmod 644 {} +
 USER nginx
 ENTRYPOINT ["/usr/src/entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;"]

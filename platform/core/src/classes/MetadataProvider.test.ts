@@ -79,4 +79,66 @@ describe('MetadataProvider', () => {
       frameNumber: '3',
     });
   });
+
+  describe('voiLutModule', () => {
+    // Regression coverage for a production failure: cornerstone's createImage
+    // reads `voiLUTFunction[0]`, so a bare string was indexed by character
+    // ('SIGMOID' -> 'S'), which is not a VOILUTFunctionType and made
+    // toLowHighRange throw 'Invalid VOI LUT function' instead of rendering.
+    const voiLutModule = (instance: Record<string, unknown>) =>
+      metadataProvider.getTagFromInstance('voiLutModule', instance as never);
+
+    it('returns voiLUTFunction as an array, matching windowCenter/windowWidth', () => {
+      const result = voiLutModule({
+        WindowCenter: 40,
+        WindowWidth: 400,
+        VOILUTFunction: 'SIGMOID',
+      });
+
+      expect(result.voiLUTFunction).toEqual(['SIGMOID']);
+      // The value cornerstone actually reads must be the whole function name.
+      expect(result.voiLUTFunction[0]).toBe('SIGMOID');
+    });
+
+    it('trims the trailing space a conformant CS value carries', () => {
+      // VOILUTFunction has VR CS, padded to an even length: 'SIGMOID' is 7.
+      expect(
+        voiLutModule({ WindowCenter: 40, WindowWidth: 400, VOILUTFunction: 'SIGMOID ' })
+          .voiLUTFunction
+      ).toEqual(['SIGMOID']);
+    });
+
+    it('upper-cases a lower-case value', () => {
+      expect(
+        voiLutModule({ WindowCenter: 40, WindowWidth: 400, VOILUTFunction: 'linear_exact' })
+          .voiLUTFunction
+      ).toEqual(['LINEAR_EXACT']);
+    });
+
+    it('passes an already-array value through', () => {
+      expect(
+        voiLutModule({ WindowCenter: 40, WindowWidth: 400, VOILUTFunction: ['LINEAR'] })
+          .voiLUTFunction
+      ).toEqual(['LINEAR']);
+    });
+
+    it.each([undefined, null, '', 'NOT_A_REAL_FUNCTION', 42, {}])(
+      'drops the unusable value %p so cornerstone applies its LINEAR default',
+      value => {
+        expect(
+          voiLutModule({ WindowCenter: 40, WindowWidth: 400, VOILUTFunction: value }).voiLUTFunction
+        ).toBeUndefined();
+      }
+    );
+
+    it.each(['LINEAR', 'LINEAR_EXACT', 'SIGMOID'])('accepts the valid function %s', value => {
+      expect(
+        voiLutModule({ WindowCenter: 40, WindowWidth: 400, VOILUTFunction: value }).voiLUTFunction
+      ).toEqual([value]);
+    });
+
+    it('still returns undefined when the window values are missing', () => {
+      expect(voiLutModule({ VOILUTFunction: 'LINEAR' })).toBeUndefined();
+    });
+  });
 });

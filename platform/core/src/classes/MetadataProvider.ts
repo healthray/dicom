@@ -11,6 +11,37 @@ import combineFrameInstance from '../utils/combineFrameInstance';
 const { calibratedPixelSpacingMetadataProvider, getPixelSpacingInformation } = utilities;
 const { getUriModule } = csMetadataUtilities;
 
+/**
+ * The only values (0028,1056) VOILUTFunction may take (DICOM PS3.3 C.11.2.1.2),
+ * matching cornerstone's VOILUTFunctionType enum.
+ */
+const VALID_VOI_LUT_FUNCTIONS = ['LINEAR', 'LINEAR_EXACT', 'SIGMOID'];
+
+/**
+ * Normalizes VOILUTFunction into the array shape cornerstone expects.
+ *
+ * cornerstone's `createImage` reads `voiLutModule.voiLUTFunction[0]`, the same
+ * way it reads `windowCenter[0]` / `windowWidth[0]`. Handing it a bare string
+ * indexes the *first character* — 'SIGMOID' becomes 'S' — which is not a member
+ * of VOILUTFunctionType, so `toLowHighRange` throws 'Invalid VOI LUT function'
+ * and the image fails to render.
+ *
+ * Also trims and upper-cases: VOILUTFunction has VR CS, which is padded with a
+ * trailing space to an even length, so a conformant file can carry 'SIGMOID '.
+ *
+ * Unrecognized values return undefined rather than being passed through, so
+ * cornerstone applies its LINEAR default instead of throwing. A viewer should
+ * degrade to a sane window/level, not refuse to display the image.
+ */
+function normalizeVOILUTFunction(value: unknown): string[] | undefined {
+  const normalized = (Array.isArray(value) ? value : [value])
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map(entry => entry.trim().toUpperCase())
+    .filter(entry => VALID_VOI_LUT_FUNCTIONS.includes(entry));
+
+  return normalized.length ? normalized : undefined;
+}
+
 class MetadataProvider {
   private readonly imageURIToUIDs: Map<string, any> = new Map();
   // Can be used to store custom metadata for a specific type.
@@ -214,7 +245,7 @@ class MetadataProvider {
         metadata = {
           windowCenter: toNumber(windowCenter),
           windowWidth: toNumber(windowWidth),
-          voiLUTFunction: VOILUTFunction,
+          voiLUTFunction: normalizeVOILUTFunction(VOILUTFunction),
         };
 
         break;

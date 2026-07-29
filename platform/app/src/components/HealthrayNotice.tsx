@@ -47,6 +47,15 @@ function HealthrayNotice({ title, children }: HealthrayNoticeProps) {
               </>
             )}
           </div>
+          {/*
+            TODO(legal): PLACEHOLDER wording, must be reviewed and approved
+            before production release. Kept in step with the viewer-side notice
+            in `extensions/default/src/ViewerLayout/ClinicalUseNotice.tsx` —
+            change both together.
+          */}
+          <p className="text-center text-xs text-white/70">
+            Not for diagnostic use. For informational purposes only.
+          </p>
           <div className="flex items-center justify-end">
             <span className="text-white">Powered By</span>
             <img

@@ -32,6 +32,7 @@
     "install:update-lockfile": "pnpm install --no-frozen-lockfile",
     "install:frozen": "pnpm install --frozen-lockfile",
     "audit": "pnpm audit",
+    "licenses:notices": "node .scripts/generate-third-party-notices.mjs",
     "start": "pnpm run dev",
     "test": "pnpm run test:unit",
     "test:data": "git submodule update --init -f testdata",

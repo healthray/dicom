@@ -25,13 +25,21 @@ let ReactRefreshWebpackPlugin;
 try {
   const mod = require('@rspack/plugin-react-refresh');
   ReactRefreshWebpackPlugin = mod.ReactRefreshRspackPlugin || mod.default || mod;
-} catch { ReactRefreshWebpackPlugin = null; }
+} catch {
+  ReactRefreshWebpackPlugin = null;
+}
 
 // ~~ ENV VARS
 const NODE_ENV = process.env.NODE_ENV;
 const QUICK_BUILD = process.env.QUICK_BUILD;
 const BUILD_NUM = process.env.CIRCLE_BUILD_NUM || '0';
 const IS_COVERAGE = process.env.COVERAGE === 'true';
+// Set GENERATE_SOURCEMAP=false to omit source maps from the build. A production
+// image that serves .map files hands out readable application source; opt out
+// when deploying, or emit them and upload them to an error tracker privately
+// rather than serving them from the web root. Defaults to true so existing
+// builds are unchanged.
+const GENERATE_SOURCEMAP = process.env.GENERATE_SOURCEMAP !== 'false';
 
 // read from ../version.txt
 const VERSION_NUMBER = fs.readFileSync(path.join(__dirname, '../version.txt'), 'utf8') || '';
@@ -70,7 +78,7 @@ module.exports = (env, argv, { SRC_DIR, ENTRY }) => {
 
   const config = {
     mode: isProdBuild ? 'production' : 'development',
-    devtool: isProdBuild ? 'source-map' : 'cheap-module-source-map',
+    devtool: GENERATE_SOURCEMAP ? (isProdBuild ? 'source-map' : 'cheap-module-source-map') : false,
     // `rspack serve` (@rspack/cli) auto-enables lazyCompilation for web-only
     // apps unless the config defines it explicitly. The on-demand proxy chunks
     // it produces fail to load in the headless cypress/electron e2e run

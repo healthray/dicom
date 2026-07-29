@@ -1,10 +1,20 @@
 #!/bin/sh
 
+# Origins the viewer is allowed to fetch imaging from, injected into the CSP
+# connect-src directive. Narrow this to the origin that issues your signed URLs,
+# e.g. CSP_CONNECT_SRC="https://media.example.com". The `https:` default permits
+# any HTTPS origin so an unconfigured deployment still loads; it is a fallback,
+# not a recommendation. Left unset with no default, envsubst would blank the
+# directive and the viewer would fail to fetch anything.
+: "${CSP_CONNECT_SRC:=https:}"
+export CSP_CONNECT_SRC
+echo "CSP connect-src allows: 'self' blob: data: ${CSP_CONNECT_SRC}"
+
 if [ -n "$SSL_PORT" ]
   then
-    envsubst '${SSL_PORT}:${PORT}' < /usr/src/default.ssl.conf.template | envsubst '${PUBLIC_URL}' > /etc/nginx/conf.d/default.conf
+    envsubst '${SSL_PORT}:${PORT}:${CSP_CONNECT_SRC}' < /usr/src/default.ssl.conf.template | envsubst '${PUBLIC_URL}' > /etc/nginx/conf.d/default.conf
   else
-    envsubst '${PORT}:${PUBLIC_URL}' < /usr/src/default.conf.template  > /etc/nginx/conf.d/default.conf
+    envsubst '${PORT}:${PUBLIC_URL}:${CSP_CONNECT_SRC}' < /usr/src/default.conf.template  > /etc/nginx/conf.d/default.conf
 fi
 
 if [ -n "$APP_CONFIG" ]; then

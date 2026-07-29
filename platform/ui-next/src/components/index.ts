@@ -96,7 +96,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuRadioGroup,
 } from './DropdownMenu';
-import { Onboarding } from './Onboarding';
 import { DoubleSlider } from './DoubleSlider';
 import {
   SegmentationTable,
@@ -250,7 +249,6 @@ export {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuRadioGroup,
-  Onboarding,
   Select,
   SelectTrigger,
   SelectContent,

@@ -22,7 +22,6 @@ import appearanceModalCustomization from './customizations/appearanceModalCustom
 import userPreferencesCustomization from './customizations/userPreferencesCustomization';
 import reportDialogCustomization from './customizations/reportDialogCustomization';
 import hotkeyBindingsCustomization from './customizations/hotkeyBindingsCustomization';
-import onboardingCustomization from './customizations/onboardingCustomization';
 import instanceSortingCriteriaCustomization from './customizations/instanceSortingCriteriaCustomization';
 import getWorkListCustomization from './customizations/workListCustomization';
 /**
@@ -75,7 +74,6 @@ export default function getCustomizationModule({ servicesManager, extensionManag
         ...userPreferencesCustomization,
         ...reportDialogCustomization,
         ...hotkeyBindingsCustomization,
-        ...onboardingCustomization,
         ...instanceSortingCriteriaCustomization,
         ...getWorkListCustomization(),
       },

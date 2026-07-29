@@ -1,14 +1,61 @@
+# PHI-safe access log.
+#
+# The default `combined` format logs $request, which includes the full query
+# string. This app is entered as `/home?url=<signed-url>`, so the default format
+# writes a working credential for a patient's imaging into the access log on
+# every page load. $uri is the path only, with the query string dropped.
+#
+# `log_format` is only valid in the http context; this file is included from
+# within http (nginx.conf's `include /etc/nginx/conf.d/*.conf`), so it belongs
+# here, outside the server block.
+log_format phi_safe '$remote_addr - $remote_user [$time_local] '
+                    '"$request_method $uri $server_protocol" '
+                    '$status $body_bytes_sent "$http_user_agent"';
+
 server {
   gzip_static  always;
   gzip_proxied expired no-cache no-store private auth;
   gunzip       on;
   listen ${PORT} default_server;
   listen [::]:${PORT} default_server;
+
+  access_log /var/log/nginx/access.log phi_safe;
+
+  # Security headers.
+  #
+  # Declared at server level so every location inherits them. nginx's add_header
+  # inheritance is all-or-nothing: a location that declares its own add_header
+  # drops ALL of these, so do not add per-location headers without repeating the
+  # full set. `always` applies them to error responses too.
+  #
+  # Referrer-Policy is load-bearing here, not routine hardening: the signed URL
+  # sits in the document URL, so any weaker policy leaks a working credential to
+  # every cross-origin host the page contacts.
+  add_header Referrer-Policy "no-referrer" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header X-Frame-Options "DENY" always;
+  add_header Cross-Origin-Resource-Policy "same-origin" always;
+  add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+  # Ignored by browsers over plain HTTP; effective once TLS terminates upstream.
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+  # Content-Security-Policy.
+  #
+  # 'unsafe-eval' is required: the DICOM codecs and ONNX runtime compile WASM.
+  # blob: is required for web workers and for the PDF/encapsulated-document
+  # viewports. 'unsafe-inline' style is required by the Tailwind/runtime styling.
+  #
+  # connect-src is the one directive you must narrow per deployment: set
+  # CSP_CONNECT_SRC to the exact origin that issues your signed URLs, e.g.
+  #   CSP_CONNECT_SRC="https://media.example.com"
+  # The default (https:) permits any HTTPS origin and is a fallback, not a
+  # recommendation.
+  add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' blob: data: ${CSP_CONNECT_SRC}; worker-src 'self' blob:; child-src 'self' blob:; object-src 'self' blob:; frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+
   location / {
     root   /usr/share/nginx/html;
     index  index.html index.htm;
     try_files $uri $uri/ ${PUBLIC_URL}index.html;
-    add_header Cross-Origin-Resource-Policy same-origin;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

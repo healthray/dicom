@@ -54,6 +54,51 @@ window.config = {
     // viewportRendering: 'auto',
   },
   // ----------------------------------------------------------------------------
+  // --- Intended-use notice -----------------------------------------------------
+  // Rendered persistently in the viewer by `ClinicalUseNotice`. Set to a string
+  // to override the wording, or to null to suppress it entirely.
+  //
+  // TODO(legal): the default wording is a PLACEHOLDER pending review. This
+  // deployment is positioned as informational viewing only and is NOT cleared
+  // or certified as a medical device, so a visible statement to that effect is
+  // what keeps that position defensible. Do not suppress it without a
+  // documented regulatory decision.
+  //
+  // clinicalUseNotice: 'Not for diagnostic use. For informational purposes only.',
+  //
+  // OHIF's own banner is suppressed below: it reads "OHIF Viewer is for
+  // investigational use only" and links to ohif.org, which is the wrong brand
+  // for this product and a different regulatory claim ("investigational use"
+  // is a clinical-trial term, not a diagnostic-use disclaimer). The notice
+  // above replaces it.
+  investigationalUseDialog: {
+    option: 'never',
+  },
+  // ----------------------------------------------------------------------------
+
+  // --- Origins the `/home` route may fetch imaging from -----------------------
+  // The `/home?url=` route fetches a DICOM zip / .dcm / PDF from a URL supplied
+  // in the query string. That parameter is attacker-controllable, so the origin
+  // is checked against this list before any request is made. The viewer's own
+  // origin is always permitted and does not need listing.
+  //
+  // Entries must be bare origins — scheme + host + optional port, no path,
+  // query, fragment or credentials. Anything else is ignored with a console
+  // error rather than being silently widened.
+  //
+  // This is empty by default, which means the viewer will only load
+  // same-origin files. A deployment serving signed URLs from object storage
+  // MUST add that origin here or every load will be blocked:
+  //
+  //   allowedLocalFileOrigins: ['https://media.example.com'],
+  //
+  // Keep it as narrow as possible: this list is what stops `?url=` being
+  // pointed at an arbitrary host.
+  // Local dev origins belong in config/dev.js, not here: in production a
+  // crafted `?url=http://localhost:.../` would make a *user's own browser*
+  // probe their machine.
+  allowedLocalFileOrigins: ['https://healthray-dicom.s3.ap-south-1.amazonaws.com'],
+  // ----------------------------------------------------------------------------
   showStudyList: true,
   // some windows systems have issues with more than 3 web workers
   maxNumberOfWebWorkers: 3,
@@ -72,7 +117,11 @@ window.config = {
     // above, the number of requests can be go a lot higher.
     prefetch: 25,
   },
-  showErrorDetails: 'always', // 'always', 'dev', 'production'
+  // 'always' | 'dev' | 'production'. 'dev' keeps stack traces and internal
+  // error detail out of the UI in a production build, where they leak
+  // implementation detail to end users and can echo back request URLs. The
+  // real cause is still reported to the browser console.
+  showErrorDetails: 'dev',
   // `dangerouslyUseDynamicConfig` (load configuration from a `configUrl` query
   // parameter) is intentionally left OFF in the secure default build. See
   // config/dev.js for the documented shape.

@@ -4,16 +4,14 @@ import JSZip from 'jszip';
 import { DicomMetadataStore } from '@ohif/core';
 
 import filesToStudies from './filesToStudies';
-import {
-  HEADER_BYTES,
-  detectFormat,
-  mimeTypeForFormat,
-  type FileFormat,
-} from './detectFileFormat';
+import { HEADER_BYTES, detectFormat, mimeTypeForFormat, type FileFormat } from './detectFileFormat';
+
+import { resolveLocalFileUrl, redactUrl } from './resolveFileUrl';
 
 import { extensionManager } from '../../App';
 import HealthrayNotice from '../../components/HealthrayNotice';
 import { publicUrl } from '../../utils/publicUrl';
+import { useAppConfig } from '@state';
 
 type LocalProps = {
   modePath: string;
@@ -24,13 +22,27 @@ function Local({ modePath }: LocalProps) {
   const [loadingFile, setLoadingFile] = useState(true);
   const [isError, setIsError] = useState(false);
   const [searchParams] = useSearchParams();
+  const [appConfig] = useAppConfig();
 
   const microscopyExtensionLoaded = extensionManager.registeredExtensionIds.includes(
     '@ohif/extension-dicom-microscopy'
   );
 
-  const getBlobByURL = async (fileUrl: string) => {
-    const response = await fetch(fileUrl);
+  const getBlobByURL = async (fileUrl: URL) => {
+    const response = await fetch(fileUrl.toString(), {
+      // `?url=` is attacker-controllable, and on this deployment the URL is
+      // itself the access credential. Each option closes a specific leak:
+      //   no-referrer  - the signed URL sits in the document URL, so the default
+      //                  policy would hand it to the origin being fetched.
+      //   redirect:error - a 302 would otherwise bypass the origin allowlist
+      //                  checked in resolveLocalFileUrl.
+      //   credentials:omit - never attach cookies to a third-party fetch.
+      mode: 'cors',
+      credentials: 'omit',
+      redirect: 'error',
+      referrerPolicy: 'no-referrer',
+      cache: 'no-store',
+    });
     // Without this an error body (S3's XML "AccessDenied", an HTML 404 page) is
     // handed to the parsers below and surfaces as a misleading format error.
     if (!response.ok) {
@@ -40,10 +52,12 @@ function Local({ modePath }: LocalProps) {
   };
 
   /** A display name for the file manager; the URL path is the only thing we can read. */
-  const fileNameFromUrl = (fileUrl: string) => {
+  const fileNameFromUrl = (fileUrl: URL) => {
     try {
-      const { pathname } = new URL(fileUrl, window.location.href);
-      return decodeURIComponent(pathname.split('/').filter(Boolean).pop() || '') || 'download.dcm';
+      return (
+        decodeURIComponent(fileUrl.pathname.split('/').filter(Boolean).pop() || '') ||
+        'download.dcm'
+      );
     } catch {
       return 'download.dcm';
     }
@@ -62,12 +76,18 @@ function Local({ modePath }: LocalProps) {
   };
 
   const onLoad = async () => {
-    const fileUrl = searchParams.get('url');
+    const rawFileUrl = searchParams.get('url');
+    let fileUrl: URL | null = null;
 
     try {
-      if (!fileUrl) {
-        throw new Error('No `url` query parameter was supplied.');
-      }
+      // Validate before fetching. `?url=` is attacker-controllable and this
+      // deployment has no authentication, so possession of the URL is the only
+      // thing gating access — it has to be an origin we chose to trust.
+      fileUrl = resolveLocalFileUrl(rawFileUrl, {
+        allowedOrigins: appConfig?.allowedLocalFileOrigins,
+        pageOrigin: window.location.origin,
+        configName: appConfig?.name,
+      });
 
       const requestedType = searchParams.get('fileType');
       const blob = await getBlobByURL(fileUrl);
@@ -84,7 +104,7 @@ function Local({ modePath }: LocalProps) {
         );
       } else if (!detected) {
         console.warn(
-          `Local: could not identify ${fileUrl} from its header (not a zip, DICOM or PDF); reading it as ${
+          `Local: could not identify ${redactUrl(fileUrl)} from its header (not a zip, DICOM or PDF); reading it as ${
             requestedType || 'dcm'
           }.`
         );
@@ -133,7 +153,8 @@ function Local({ modePath }: LocalProps) {
         const smStudies = studies.filter(id => {
           const study = DicomMetadataStore.getStudy(id);
           return (
-            study.series.findIndex(s => s.Modality === 'SM' || s.instances[0].Modality === 'SM') >= 0
+            study.series.findIndex(s => s.Modality === 'SM' || s.instances[0].Modality === 'SM') >=
+            0
           );
         });
 
@@ -152,8 +173,9 @@ function Local({ modePath }: LocalProps) {
       navigate(`/${modePath}?${decodeURIComponent(query.toString())}`);
     } catch (error) {
       // The notice deliberately stays generic for end users, so this console
-      // entry is the only place the real cause is reported.
-      console.error(`Local: failed to load ${fileUrl || '(no url)'} —`, error);
+      // entry is the only place the real cause is reported. The URL is redacted
+      // because its query string carries the signature that authorises access.
+      console.error(`Local: failed to load ${redactUrl(fileUrl)} —`, error);
       setLoadingFile(false);
       setIsError(true);
     }

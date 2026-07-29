@@ -13,6 +13,23 @@
 window.config = {
   name: 'config/dev.js',
   routerBasename: null,
+
+  // Origins the `/home?url=` route may fetch imaging from. The viewer's own
+  // origin is always allowed; these cover the usual local file servers you
+  // would run alongside the dev server on another port.
+  //
+  // DEV ONLY. config/default.js ships an empty list because this is what stops
+  // `?url=` being pointed at an arbitrary host — a production deployment must
+  // name its own signed-URL origin and nothing else.
+  allowedLocalFileOrigins: [
+    'http://localhost:4000',
+    'http://localhost:5000',
+    'http://localhost:8042', // Orthanc
+    'http://127.0.0.1:4000',
+    'http://127.0.0.1:5000',
+    'http://127.0.0.1:8042',
+  ],
+
   // whiteLabeling: {},
   extensions: [],
   modes: [],
