@@ -97,7 +97,10 @@ window.config = {
   // Local dev origins belong in config/dev.js, not here: in production a
   // crafted `?url=http://localhost:.../` would make a *user's own browser*
   // probe their machine.
-  allowedLocalFileOrigins: ['https://healthray-lab.s3.ap-south-1.amazonaws.com'],
+  allowedLocalFileOrigins: [
+    'https://healthray-lab.s3.ap-south-1.amazonaws.com',
+    'https://healthray-dicom.s3.ap-south-1.amazonaws.com',
+  ],
   // ----------------------------------------------------------------------------
   showStudyList: true,
   // some windows systems have issues with more than 3 web workers
