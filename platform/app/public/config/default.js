@@ -100,6 +100,10 @@ window.config = {
   allowedLocalFileOrigins: [
     'https://healthray-lab.s3.ap-south-1.amazonaws.com',
     'https://healthray-dicom.s3.ap-south-1.amazonaws.com',
+    'https://stage-dicoms.s3.ap-south-1.amazonaws.com',
+    'https://stage-lab.s3.ap-south-1.amazonaws.com',
+    'https://uat-dicom.s3.ap-south-1.amazonaws.com',
+    'https://uat-lab.s3.ap-south-1.amazonaws.com',
   ],
   // ----------------------------------------------------------------------------
   showStudyList: true,
